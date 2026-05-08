@@ -6,7 +6,7 @@ import type { ChartConfig } from "@/components/ui/chart"
 import type { ChartData } from "@/types"
 import CpuCoresSheet from "../cpu-sheet"
 import { ChartCard, FilterBar, SelectAvgMax } from "../chart-card"
-import { dockerOrPodman } from "../chart-data"
+import { containerEngineLabel, type ContainerEngine } from "../chart-data"
 
 export function CpuChart({
 	chartData,
@@ -61,12 +61,14 @@ export function ContainerCpuChart({
 	grid,
 	dataEmpty,
 	isPodman,
+	containerEngine,
 	cpuConfig,
 }: {
 	chartData: ChartData
 	grid: boolean
 	dataEmpty: boolean
 	isPodman: boolean
+	containerEngine: ContainerEngine
 	cpuConfig: ChartConfig
 }) {
 	const { filter, dataPoints } = useContainerDataPoints(cpuConfig, (key, data) => data[key]?.c ?? null)
@@ -75,7 +77,7 @@ export function ContainerCpuChart({
 		<ChartCard
 			empty={dataEmpty}
 			grid={grid}
-			title={dockerOrPodman(t`Docker CPU Usage`, isPodman)}
+			title={containerEngineLabel(t`Docker CPU Usage`, containerEngine)}
 			description={t`Average CPU utilization of containers`}
 			cornerEl={<FilterBar />}
 		>

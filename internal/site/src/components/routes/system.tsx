@@ -54,6 +54,7 @@ export default memo(function SystemDetail({ id }: { id: string }) {
 		showMax,
 		dataEmpty,
 		isPodman,
+		containerEngine,
 		lastGpus,
 		hasGpuData,
 		hasGpuEnginesData,
@@ -101,7 +102,7 @@ export default memo(function SystemDetail({ id }: { id: string }) {
 							chartData={chartData}
 							grid={grid}
 							dataEmpty={dataEmpty}
-							isPodman={isPodman}
+							isPodman={isPodman} containerEngine={containerEngine}
 							cpuConfig={containerChartConfigs.cpu}
 						/>
 					)}
@@ -113,7 +114,7 @@ export default memo(function SystemDetail({ id }: { id: string }) {
 							chartData={chartData}
 							grid={grid}
 							dataEmpty={dataEmpty}
-							isPodman={isPodman}
+							isPodman={isPodman} containerEngine={containerEngine}
 							memoryConfig={containerChartConfigs.memory}
 						/>
 					)}
@@ -127,7 +128,7 @@ export default memo(function SystemDetail({ id }: { id: string }) {
 							chartData={chartData}
 							grid={grid}
 							dataEmpty={dataEmpty}
-							isPodman={isPodman}
+							isPodman={isPodman} containerEngine={containerEngine}
 							networkConfig={containerChartConfigs.network}
 						/>
 					)}
@@ -279,21 +280,21 @@ export default memo(function SystemDetail({ id }: { id: string }) {
 										chartData={chartData}
 										grid={grid}
 										dataEmpty={dataEmpty}
-										isPodman={isPodman}
+										isPodman={isPodman} containerEngine={containerEngine}
 										cpuConfig={containerChartConfigs.cpu}
 									/>
 									<ContainerMemoryChart
 										chartData={chartData}
 										grid={grid}
 										dataEmpty={dataEmpty}
-										isPodman={isPodman}
+										isPodman={isPodman} containerEngine={containerEngine}
 										memoryConfig={containerChartConfigs.memory}
 									/>
 									<ContainerNetworkChart
 										chartData={chartData}
 										grid={grid}
 										dataEmpty={dataEmpty}
-										isPodman={isPodman}
+										isPodman={isPodman} containerEngine={containerEngine}
 										networkConfig={containerChartConfigs.network}
 									/>
 								</div>
