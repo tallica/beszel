@@ -108,9 +108,11 @@ export function makeContainerPoint(
 	return point
 }
 
-export function dockerOrPodman(str: string, isPodman: boolean): string {
-	if (isPodman) {
-		return str.replace("docker", "podman").replace("Docker", "Podman")
-	}
-	return str
+export type ContainerEngine = "docker" | "podman" | "incus" | "container"
+
+/** Replace the "Docker" token in a label with the active container engine name. */
+export function containerEngineLabel(str: string, engine: ContainerEngine): string {
+	if (engine === "docker") return str
+	const label = engine.charAt(0).toUpperCase() + engine.slice(1)
+	return str.replace("Docker", label).replace("docker", engine)
 }
