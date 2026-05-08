@@ -249,8 +249,9 @@ func (im *incusManager) updateInstanceStats(inst incusInstance, cacheTimeMs uint
 	if !ok {
 		stats = &container.Stats{
 			Name:  inst.Name,
-			Id:    inst.Name,
+			Id:    "incus_" + inst.Name,
 			Image: incusImageLabel(inst.Config),
+			Type:  "incus",
 		}
 		im.containerStatsMap[inst.Name] = stats
 	}

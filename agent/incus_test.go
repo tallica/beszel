@@ -287,7 +287,7 @@ func TestGetIncusStatsFirstCall(t *testing.T) {
 
 	web, ok := byName["web"]
 	require.True(t, ok, "web must be present")
-	assert.Equal(t, "web", web.Id)
+	assert.Equal(t, "incus_web", web.Id)
 	assert.Equal(t, "Ubuntu 22.04 LTS", web.Image)
 	assert.Equal(t, "Running", web.Status)
 	assert.Equal(t, container.DockerHealthNone, web.Health)

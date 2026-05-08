@@ -150,6 +150,7 @@ type Stats struct {
 	Id     string       `json:"-" cbor:"7,keyasint"`
 	Image  string       `json:"-" cbor:"8,keyasint"`
 	Ports  string       `json:"-" cbor:"10,keyasint"`
+	Type   string       `json:"ty,omitempty" cbor:"11,keyasint,omitempty"` // "docker" | "incus"
 	// PrevCpu     [2]uint64    `json:"-"`
 	CpuSystem    uint64       `json:"-"`
 	CpuContainer uint64       `json:"-"`

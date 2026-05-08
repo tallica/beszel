@@ -47,8 +47,18 @@ export const containerChartCols: ColumnDef<ContainerRecord>[] = [
 		sortingFn: (a, b) => a.original.name.localeCompare(b.original.name),
 		accessorFn: (record) => record.name,
 		header: ({ column }) => <HeaderButton column={column} name={t`Name`} Icon={ContainerIcon} />,
-		cell: ({ getValue }) => {
-			return <span className="ms-1.5 xl:w-48 block truncate">{getValue() as string}</span>
+		cell: ({ row }) => {
+			const isIncus = row.original.id.startsWith("incus_")
+			return (
+				<div className="flex items-center gap-1.5 ms-1.5">
+					<span className="xl:w-48 block truncate">{row.original.name}</span>
+					{isIncus && (
+						<Badge variant="outline" className="shrink-0 py-0 px-1 text-xs font-normal">
+							Incus
+						</Badge>
+					)}
+				</div>
+			)
 		},
 	},
 	{
