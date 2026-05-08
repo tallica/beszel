@@ -1,0 +1,472 @@
+package agent
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"fmt"
+	"hash/fnv"
+	"io"
+	"log/slog"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"path"
+	"runtime"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/henrygd/beszel/agent/utils"
+	"github.com/henrygd/beszel/internal/entities/container"
+)
+
+const incusTimeoutMs = 2100
+
+// incusManager collects Incus instance stats from the Incus API.
+//
+// Each poll makes two requests, both covering every project: the instance list
+// (for the UUID, status and image) and /1.0/metrics (for CPU, memory and network).
+type incusManager struct {
+	client            *http.Client
+	mu                sync.Mutex
+	excludeContainers []string
+	numCPU            int // host CPUs; CPU % is a share of the whole host, like Docker's
+
+	// Previous counter samples per cache time, keyed by instance key (project/name).
+	prevSamples map[uint16]map[string]incusSample
+}
+
+// incusSample holds the cumulative counters read for an instance at one point in time.
+type incusSample struct {
+	cpuSeconds float64
+	sent, recv uint64
+	readTime   time.Time
+}
+
+// incusResponse is the Incus REST API response envelope.
+type incusResponse[T any] struct {
+	StatusCode int `json:"status_code"`
+	Metadata   T   `json:"metadata"`
+}
+
+// incusInstance represents an entry from GET /1.0/instances?recursion=1.
+type incusInstance struct {
+	Name    string            `json:"name"`
+	Project string            `json:"project"`
+	Status  string            `json:"status"`
+	Type    string            `json:"type"`
+	Config  map[string]string `json:"config"`
+}
+
+// incusInstanceMetrics holds the values read from /1.0/metrics for one instance.
+type incusInstanceMetrics struct {
+	cpuSeconds   float64
+	memTotal     uint64
+	memFree      uint64
+	inactiveFile uint64
+	sent, recv   uint64
+}
+
+// incusIdleCPUModes are CPU modes that aren't instance activity. Containers
+// only report user and system; VMs report every mode through incus-agent.
+var incusIdleCPUModes = map[string]bool{"idle": true, "iowait": true, "steal": true}
+
+// incusKey identifies an instance across projects.
+func incusKey(project, name string) string {
+	return project + "/" + name
+}
+
+// displayName returns the instance name, prefixed with its project outside the default project.
+func (inst *incusInstance) displayName() string {
+	if inst.Project == "" || inst.Project == "default" {
+		return inst.Name
+	}
+	return incusKey(inst.Project, inst.Name)
+}
+
+// containerId returns an ID that is unique across hosts, built from volatile.uuid.
+// The "incus_" prefix tells the UI the row is an Incus instance.
+func (inst *incusInstance) containerId() string {
+	id := strings.ReplaceAll(inst.Config["volatile.uuid"], "-", "")
+	if len(id) < 12 {
+		// No UUID (shouldn't happen): fall back to a hash of project and name.
+		h := fnv.New64a()
+		h.Write([]byte(incusKey(inst.Project, inst.Name)))
+		id = fmt.Sprintf("%016x", h.Sum64())
+	}
+	return "incus_" + id[:12]
+}
+
+func (im *incusManager) shouldExclude(inst *incusInstance) bool {
+	for _, pattern := range im.excludeContainers {
+		if match, _ := path.Match(pattern, inst.Name); match {
+			return true
+		}
+		if match, _ := path.Match(pattern, inst.displayName()); match {
+			return true
+		}
+	}
+	return false
+}
+
+// getIncusStats returns stats for running and frozen Incus instances in all projects.
+func (im *incusManager) getIncusStats(cacheTimeMs uint16) ([]*container.Stats, error) {
+	im.mu.Lock()
+	defer im.mu.Unlock()
+
+	instances, err := im.getInstances()
+	if err != nil {
+		return nil, err
+	}
+	metrics, err := im.getMetrics()
+	if err != nil {
+		return nil, err
+	}
+	readTime := time.Now()
+
+	prev := im.prevSamples[cacheTimeMs]
+	if prev == nil {
+		prev = make(map[string]incusSample)
+		im.prevSamples[cacheTimeMs] = prev
+	}
+	seen := make(map[string]struct{}, len(instances))
+
+	stats := make([]*container.Stats, 0, len(instances))
+	for i := range instances {
+		inst := &instances[i]
+		// Metrics only cover running and frozen instances.
+		if inst.Status != "Running" && inst.Status != "Frozen" {
+			continue
+		}
+		if im.shouldExclude(inst) {
+			slog.Debug("Excluding Incus instance", "name", inst.displayName())
+			continue
+		}
+		key := incusKey(inst.Project, inst.Name)
+		seen[key] = struct{}{}
+
+		m := metrics[key]
+		sample := incusSample{cpuSeconds: m.cpuSeconds, sent: m.sent, recv: m.recv, readTime: readTime}
+		cpuPct, sentBps, recvBps := im.calculateRates(inst.displayName(), prev[key], sample)
+		prev[key] = sample
+
+		stats = append(stats, &container.Stats{
+			Name:      inst.displayName(),
+			Id:        inst.containerId(),
+			Image:     incusImageLabel(inst.Config),
+			Type:      "incus",
+			Status:    inst.Status,
+			Health:    container.DockerHealthNone,
+			Cpu:       utils.TwoDecimals(cpuPct),
+			Mem:       utils.BytesToMegabytes(float64(m.usedMemory())),
+			Bandwidth: [2]uint64{sentBps, recvBps},
+			// TODO(0.19+): stop populating NetworkSent/NetworkRecv (deprecated in 0.18.3)
+			NetworkSent: utils.BytesToMegabytes(float64(sentBps)),
+			NetworkRecv: utils.BytesToMegabytes(float64(recvBps)),
+		})
+	}
+
+	// Forget instances that are gone, stopped or excluded, in every cache time.
+	for _, samples := range im.prevSamples {
+		for key := range samples {
+			if _, ok := seen[key]; !ok {
+				delete(samples, key)
+			}
+		}
+	}
+
+	return stats, nil
+}
+
+// calculateRates returns CPU % (share of the host) and network bytes per second
+// between two samples. The first sample, or a counter that went backwards, gives zero.
+func (im *incusManager) calculateRates(name string, prev, cur incusSample) (cpuPct float64, sentBps, recvBps uint64) {
+	if prev.readTime.IsZero() {
+		return 0, 0, 0
+	}
+	elapsed := cur.readTime.Sub(prev.readTime)
+	if elapsed <= 0 {
+		return 0, 0, 0
+	}
+
+	if cur.cpuSeconds >= prev.cpuSeconds && im.numCPU > 0 {
+		cpuPct = (cur.cpuSeconds - prev.cpuSeconds) / (elapsed.Seconds() * float64(im.numCPU)) * 100
+		cpuPct = min(cpuPct, 100)
+	}
+
+	ms := uint64(elapsed.Milliseconds())
+	if ms == 0 {
+		return cpuPct, 0, 0
+	}
+	if cur.sent >= prev.sent {
+		sentBps = (cur.sent - prev.sent) * 1000 / ms
+		if sentBps > maxNetworkSpeedBps {
+			slog.Warn("Bad network sent delta", "instance", name)
+			sentBps = 0
+		}
+	}
+	if cur.recv >= prev.recv {
+		recvBps = (cur.recv - prev.recv) * 1000 / ms
+		if recvBps > maxNetworkSpeedBps {
+			slog.Warn("Bad network recv delta", "instance", name)
+			recvBps = 0
+		}
+	}
+	return cpuPct, sentBps, recvBps
+}
+
+// usedMemory returns memory in use without reclaimable page cache, matching
+// Docker's figure (cgroup usage minus inactive_file). MemTotal - MemFree is
+// the cgroup's memory.current for containers.
+func (m incusInstanceMetrics) usedMemory() uint64 {
+	if m.memTotal <= m.memFree {
+		return 0
+	}
+	used := m.memTotal - m.memFree
+	if used <= m.inactiveFile {
+		return 0
+	}
+	used -= m.inactiveFile
+	if used > maxMemoryUsage {
+		return 0
+	}
+	return used
+}
+
+// getInstances lists instances in all projects.
+func (im *incusManager) getInstances() ([]incusInstance, error) {
+	resp, err := im.client.Get("http://incus/1.0/instances?recursion=1&all-projects=true")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("incus instances: %s", resp.Status)
+	}
+	var listResp incusResponse[[]incusInstance]
+	if err := json.NewDecoder(resp.Body).Decode(&listResp); err != nil {
+		return nil, err
+	}
+	return listResp.Metadata, nil
+}
+
+// getMetrics reads /1.0/metrics, keyed by instance key (project/name).
+func (im *incusManager) getMetrics() (map[string]*incusInstanceMetrics, error) {
+	resp, err := im.client.Get("http://incus/1.0/metrics")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("incus metrics: %s", resp.Status)
+	}
+	return parseIncusMetrics(resp.Body)
+}
+
+// parseIncusMetrics parses the Prometheus text format returned by /1.0/metrics,
+// keeping only the per-instance series beszel uses.
+func parseIncusMetrics(r io.Reader) (map[string]*incusInstanceMetrics, error) {
+	result := make(map[string]*incusInstanceMetrics)
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" || line[0] == '#' {
+			continue
+		}
+		name, labels, value, ok := parsePrometheusLine(line)
+		if !ok {
+			continue
+		}
+		switch name {
+		case "incus_cpu_seconds_total", "incus_memory_MemTotal_bytes", "incus_memory_MemFree_bytes",
+			"incus_memory_Inactive_file_bytes", "incus_network_receive_bytes_total", "incus_network_transmit_bytes_total":
+		default:
+			continue
+		}
+		if labels["name"] == "" {
+			continue
+		}
+		key := incusKey(labels["project"], labels["name"])
+		m := result[key]
+		if m == nil {
+			m = &incusInstanceMetrics{}
+			result[key] = m
+		}
+		switch name {
+		case "incus_cpu_seconds_total":
+			if !incusIdleCPUModes[labels["mode"]] {
+				m.cpuSeconds += value
+			}
+		case "incus_memory_MemTotal_bytes":
+			m.memTotal = uint64(value)
+		case "incus_memory_MemFree_bytes":
+			m.memFree = uint64(value)
+		case "incus_memory_Inactive_file_bytes":
+			m.inactiveFile = uint64(value)
+		case "incus_network_receive_bytes_total":
+			if labels["device"] != "lo" {
+				m.recv += uint64(value)
+			}
+		case "incus_network_transmit_bytes_total":
+			if labels["device"] != "lo" {
+				m.sent += uint64(value)
+			}
+		}
+	}
+	return result, scanner.Err()
+}
+
+// parsePrometheusLine parses one sample line: name{label="value",...} value [timestamp].
+func parsePrometheusLine(line string) (name string, labels map[string]string, value float64, ok bool) {
+	i := strings.IndexAny(line, "{ ")
+	if i < 0 {
+		return "", nil, 0, false
+	}
+	name, rest := line[:i], line[i:]
+
+	if rest[0] == '{' {
+		labels = make(map[string]string, 4)
+		rest = rest[1:]
+		for {
+			rest = strings.TrimLeft(rest, ", ")
+			if rest == "" {
+				return "", nil, 0, false
+			}
+			if rest[0] == '}' {
+				rest = rest[1:]
+				break
+			}
+			eq := strings.Index(rest, `="`)
+			if eq < 0 {
+				return "", nil, 0, false
+			}
+			key := rest[:eq]
+			rest = rest[eq+2:]
+			var sb strings.Builder
+			closed := false
+			for i := 0; i < len(rest); i++ {
+				c := rest[i]
+				if c == '\\' && i+1 < len(rest) {
+					i++
+					switch rest[i] {
+					case 'n':
+						sb.WriteByte('\n')
+					default:
+						sb.WriteByte(rest[i])
+					}
+					continue
+				}
+				if c == '"' {
+					rest = rest[i+1:]
+					closed = true
+					break
+				}
+				sb.WriteByte(c)
+			}
+			if !closed {
+				return "", nil, 0, false
+			}
+			labels[key] = sb.String()
+		}
+	}
+
+	fields := strings.Fields(rest)
+	if len(fields) == 0 {
+		return "", nil, 0, false
+	}
+	value, err := strconv.ParseFloat(fields[0], 64)
+	if err != nil {
+		return "", nil, 0, false
+	}
+	return name, labels, value, true
+}
+
+// incusImageLabel builds a human-readable image string from instance config.
+func incusImageLabel(config map[string]string) string {
+	if desc := config["image.description"]; desc != "" {
+		return desc
+	}
+	return strings.TrimSpace(config["image.os"] + " " + config["image.release"])
+}
+
+// getIncusSocketPath returns the first existing Incus Unix socket path.
+func getIncusSocketPath() string {
+	candidates := []string{
+		"/var/lib/incus/unix.socket",
+		"/run/incus/unix.socket",
+	}
+	for _, s := range candidates {
+		if _, err := os.Stat(s); err == nil {
+			return s
+		}
+	}
+	return candidates[0]
+}
+
+// newIncusManager creates an incusManager connected to the Incus Unix socket.
+// Returns nil if Incus is not available or explicitly disabled via INCUS_HOST="".
+func newIncusManager() *incusManager {
+	var socketPath string
+
+	incusHost, exists := utils.GetEnv("INCUS_HOST")
+	if exists {
+		if incusHost == "" {
+			return nil
+		}
+		parsedURL, err := url.Parse(incusHost)
+		if err != nil || parsedURL.Scheme != "unix" {
+			slog.Error("INCUS_HOST must be a unix:// URL", "value", incusHost)
+			return nil
+		}
+		socketPath = parsedURL.Path
+	} else {
+		socketPath = getIncusSocketPath()
+		if _, err := os.Stat(socketPath); err != nil {
+			slog.Debug("Incus socket not found", "path", socketPath)
+			return nil
+		}
+	}
+
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
+		},
+	}
+
+	timeout := time.Millisecond * time.Duration(incusTimeoutMs)
+	if t, set := utils.GetEnv("INCUS_TIMEOUT"); set {
+		if d, err := time.ParseDuration(t); err == nil {
+			timeout = d
+			slog.Info("INCUS_TIMEOUT", "timeout", timeout)
+		} else {
+			slog.Error("Invalid INCUS_TIMEOUT", "err", err)
+			return nil
+		}
+	}
+
+	var excludeContainers []string
+	if excludeStr, set := utils.GetEnv("INCUS_EXCLUDE_CONTAINERS"); set && excludeStr != "" {
+		for part := range strings.SplitSeq(excludeStr, ",") {
+			if trimmed := strings.TrimSpace(part); trimmed != "" {
+				excludeContainers = append(excludeContainers, trimmed)
+			}
+		}
+		slog.Info("INCUS_EXCLUDE_CONTAINERS", "patterns", excludeContainers)
+	}
+
+	slog.Info("Incus", "socket", socketPath)
+
+	return &incusManager{
+		client: &http.Client{
+			Timeout:   timeout,
+			Transport: transport,
+		},
+		excludeContainers: excludeContainers,
+		numCPU:            runtime.NumCPU(),
+		prevSamples:       make(map[uint16]map[string]incusSample),
+	}
+}
