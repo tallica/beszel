@@ -10,7 +10,7 @@ import type { ChartData, SystemStatsRecord } from "@/types"
 import { Separator } from "@/components/ui/separator"
 import NetworkSheet from "../network-sheet"
 import { ChartCard, FilterBar, SelectAvgMax } from "../chart-card"
-import { dockerOrPodman } from "../chart-data"
+import { containerEngineLabel, type ContainerEngine } from "../chart-data"
 
 export function BandwidthChart({
 	chartData,
@@ -93,12 +93,14 @@ export function ContainerNetworkChart({
 	grid,
 	dataEmpty,
 	isPodman,
+	containerEngine,
 	networkConfig,
 }: {
 	chartData: ChartData
 	grid: boolean
 	dataEmpty: boolean
 	isPodman: boolean
+	containerEngine: ContainerEngine
 	networkConfig: ChartConfig
 }) {
 	const userSettings = $userSettings.get()
@@ -158,8 +160,8 @@ export function ContainerNetworkChart({
 		<ChartCard
 			empty={dataEmpty}
 			grid={grid}
-			title={dockerOrPodman(t`Docker Network I/O`, isPodman)}
-			description={dockerOrPodman(t`Network traffic of docker containers`, isPodman)}
+			title={containerEngineLabel(t`Docker Network I/O`, containerEngine)}
+			description={containerEngineLabel(t`Network traffic of docker containers`, containerEngine)}
 			cornerEl={<FilterBar />}
 		>
 			<AreaChartDefault

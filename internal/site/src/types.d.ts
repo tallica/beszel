@@ -216,6 +216,8 @@ interface ContainerStats {
 	nr?: number
 	/** bandwidth bytes [sent, recv] */
 	b?: [number, number]
+	/** type ("docker" | "incus") */
+	ty?: string
 }
 
 export interface SystemStatsRecord extends RecordModel {

@@ -5,7 +5,7 @@ import { Unit } from "@/lib/enums"
 import type { ChartConfig } from "@/components/ui/chart"
 import type { ChartData, SystemStatsRecord } from "@/types"
 import { ChartCard, FilterBar, SelectAvgMax } from "../chart-card"
-import { dockerOrPodman } from "../chart-data"
+import { containerEngineLabel, type ContainerEngine } from "../chart-data"
 import { decimalString, formatBytes, toFixedFloat } from "@/lib/utils"
 import { pinnedAxisDomain } from "@/components/ui/chart"
 
@@ -84,12 +84,14 @@ export function ContainerMemoryChart({
 	grid,
 	dataEmpty,
 	isPodman,
+	containerEngine,
 	memoryConfig,
 }: {
 	chartData: ChartData
 	grid: boolean
 	dataEmpty: boolean
 	isPodman: boolean
+	containerEngine: ContainerEngine
 	memoryConfig: ChartConfig
 }) {
 	const { filter, dataPoints } = useContainerDataPoints(memoryConfig, (key, data) => data[key]?.m ?? null)
@@ -98,8 +100,8 @@ export function ContainerMemoryChart({
 		<ChartCard
 			empty={dataEmpty}
 			grid={grid}
-			title={dockerOrPodman(t`Docker Memory Usage`, isPodman)}
-			description={dockerOrPodman(t`Memory usage of docker containers`, isPodman)}
+			title={containerEngineLabel(t`Docker Memory Usage`, containerEngine)}
+			description={containerEngineLabel(t`Memory usage of docker containers`, containerEngine)}
 			cornerEl={<FilterBar />}
 		>
 			<AreaChartDefault

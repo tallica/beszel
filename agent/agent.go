@@ -35,6 +35,7 @@ type Agent struct {
 	netIoStats                map[uint16]system.NetIoStats                          // Keeps track of bandwidth usage per cache interval
 	netInterfaceDeltaTrackers map[uint16]*deltatracker.DeltaTracker[string, uint64] // Per-cache-time NIC delta trackers
 	dockerManager             *dockerManager                                        // Manages Docker API requests
+	incusManager              *incusManager                                         // Manages Incus instance API requests
 	sensorConfig              *SensorConfig                                         // Sensors config
 	systemInfo                system.Info                                           // Host system info (dynamic)
 	systemDetails             system.Details                                        // Host system details (static, once-per-connection)
@@ -101,6 +102,9 @@ func NewAgent(dataDir ...string) (agent *Agent, err error) {
 
 	// initialize docker manager
 	agent.dockerManager = newDockerManager(agent)
+
+	// initialize incus manager
+	agent.incusManager = newIncusManager()
 
 	// initialize system info
 	agent.refreshSystemDetails()
@@ -171,10 +175,19 @@ func (a *Agent) gatherStats(options common.DataRequestOptions) *system.CombinedD
 
 	if a.dockerManager != nil {
 		if containerStats, err := a.dockerManager.getDockerStats(cacheTimeMs); err == nil {
-			data.Containers = containerStats
+			data.Containers = append(data.Containers, containerStats...)
 			slog.Debug("Containers", "data", data.Containers)
 		} else {
 			slog.Debug("Containers", "err", err)
+		}
+	}
+
+	if a.incusManager != nil {
+		if incusStats, err := a.incusManager.getIncusStats(cacheTimeMs); err == nil {
+			data.Containers = append(data.Containers, incusStats...)
+			slog.Debug("Incus instances", "data", incusStats)
+		} else {
+			slog.Debug("Incus", "err", err)
 		}
 	}
 

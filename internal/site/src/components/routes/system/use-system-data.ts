@@ -26,7 +26,7 @@ import type {
 	SystemStatsRecord,
 } from "@/types"
 import { $router, navigate } from "../../router"
-import { appendData, cache, getStats, getTimeData, makeContainerData, makeContainerPoint } from "./chart-data"
+import { appendData, cache, getStats, getTimeData, makeContainerData, makeContainerPoint, type ContainerEngine } from "./chart-data"
 
 export type SystemData = ReturnType<typeof useSystemData>
 
@@ -297,6 +297,24 @@ export function useSystemData(id: string) {
 	const lastGpus = systemStats.at(-1)?.stats?.g
 	const isPodman = details?.podman ?? system.info?.p ?? false
 
+	// Derive the active container engine from the most recent chart data point.
+	// ty="incus" means Incus; ty="docker" or absent means Docker/Podman (legacy).
+	const containerEngine = useMemo((): ContainerEngine => {
+		const lastPoint = containerData.at(-1)
+		if (!lastPoint) return isPodman ? "podman" : "docker"
+		let hasIncus = false
+		let hasOther = false
+		for (const key in lastPoint) {
+			if (key === "created") continue
+			const ty = (lastPoint[key] as { ty?: string } | null)?.ty
+			if (ty === "incus") hasIncus = true
+			else hasOther = true
+		}
+		if (hasIncus && (hasOther || isPodman)) return "container"
+		if (hasIncus) return "incus"
+		return isPodman ? "podman" : "docker"
+	}, [containerData, isPodman])
+
 	let hasGpuData = false
 	let hasGpuEnginesData = false
 	let hasGpuPowerData = false
@@ -338,6 +356,7 @@ export function useSystemData(id: string) {
 		showMax,
 		dataEmpty,
 		isPodman,
+		containerEngine,
 		lastGpus,
 		hasGpuData,
 		hasGpuEnginesData,
