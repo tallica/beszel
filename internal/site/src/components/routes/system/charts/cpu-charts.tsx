@@ -60,14 +60,12 @@ export function ContainerCpuChart({
 	chartData,
 	grid,
 	dataEmpty,
-	isPodman,
 	containerEngine,
 	cpuConfig,
 }: {
 	chartData: ChartData
 	grid: boolean
 	dataEmpty: boolean
-	isPodman: boolean
 	containerEngine: ContainerEngine
 	cpuConfig: ChartConfig
 }) {

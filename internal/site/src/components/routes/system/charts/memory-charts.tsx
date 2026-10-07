@@ -82,14 +82,12 @@ export function ContainerMemoryChart({
 	chartData,
 	grid,
 	dataEmpty,
-	isPodman,
 	containerEngine,
 	memoryConfig,
 }: {
 	chartData: ChartData
 	grid: boolean
 	dataEmpty: boolean
-	isPodman: boolean
 	containerEngine: ContainerEngine
 	memoryConfig: ChartConfig
 }) {

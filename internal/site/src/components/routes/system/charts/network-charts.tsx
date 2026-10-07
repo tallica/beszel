@@ -91,14 +91,12 @@ export function ContainerNetworkChart({
 	chartData,
 	grid,
 	dataEmpty,
-	isPodman,
 	containerEngine,
 	networkConfig,
 }: {
 	chartData: ChartData
 	grid: boolean
 	dataEmpty: boolean
-	isPodman: boolean
 	containerEngine: ContainerEngine
 	networkConfig: ChartConfig
 }) {

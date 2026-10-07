@@ -53,7 +53,6 @@ export default memo(function SystemDetail({ id }: { id: string }) {
 		isLongerChart,
 		showMax,
 		dataEmpty,
-		isPodman,
 		containerEngine,
 		lastGpus,
 		hasGpuData,
@@ -102,7 +101,7 @@ export default memo(function SystemDetail({ id }: { id: string }) {
 							chartData={chartData}
 							grid={grid}
 							dataEmpty={dataEmpty}
-							isPodman={isPodman} containerEngine={containerEngine}
+							containerEngine={containerEngine}
 							cpuConfig={containerChartConfigs.cpu}
 						/>
 					)}
@@ -114,7 +113,7 @@ export default memo(function SystemDetail({ id }: { id: string }) {
 							chartData={chartData}
 							grid={grid}
 							dataEmpty={dataEmpty}
-							isPodman={isPodman} containerEngine={containerEngine}
+							containerEngine={containerEngine}
 							memoryConfig={containerChartConfigs.memory}
 						/>
 					)}
@@ -128,7 +127,7 @@ export default memo(function SystemDetail({ id }: { id: string }) {
 							chartData={chartData}
 							grid={grid}
 							dataEmpty={dataEmpty}
-							isPodman={isPodman} containerEngine={containerEngine}
+							containerEngine={containerEngine}
 							networkConfig={containerChartConfigs.network}
 						/>
 					)}
@@ -280,21 +279,21 @@ export default memo(function SystemDetail({ id }: { id: string }) {
 										chartData={chartData}
 										grid={grid}
 										dataEmpty={dataEmpty}
-										isPodman={isPodman} containerEngine={containerEngine}
+										containerEngine={containerEngine}
 										cpuConfig={containerChartConfigs.cpu}
 									/>
 									<ContainerMemoryChart
 										chartData={chartData}
 										grid={grid}
 										dataEmpty={dataEmpty}
-										isPodman={isPodman} containerEngine={containerEngine}
+										containerEngine={containerEngine}
 										memoryConfig={containerChartConfigs.memory}
 									/>
 									<ContainerNetworkChart
 										chartData={chartData}
 										grid={grid}
 										dataEmpty={dataEmpty}
-										isPodman={isPodman} containerEngine={containerEngine}
+										containerEngine={containerEngine}
 										networkConfig={containerChartConfigs.network}
 									/>
 								</div>
