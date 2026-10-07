@@ -157,7 +157,7 @@ export function ContainerNetworkChart({
 		<ChartCard
 			empty={dataEmpty}
 			grid={grid}
-			title={containerEngineLabel(t`Docker Network I/O`, containerEngine)}
+			title={containerEngineLabel(t`Docker Network I/O`, t`Container Network I/O`, containerEngine)}
 			description={t`Network traffic of containers`}
 			cornerEl={<FilterBar />}
 		>

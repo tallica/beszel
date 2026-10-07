@@ -75,7 +75,7 @@ export function ContainerCpuChart({
 		<ChartCard
 			empty={dataEmpty}
 			grid={grid}
-			title={containerEngineLabel(t`Docker CPU Usage`, containerEngine)}
+			title={containerEngineLabel(t`Docker CPU Usage`, t`Container CPU Usage`, containerEngine)}
 			description={t`Average CPU utilization of containers`}
 			cornerEl={<FilterBar />}
 		>

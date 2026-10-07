@@ -97,7 +97,7 @@ export function ContainerMemoryChart({
 		<ChartCard
 			empty={dataEmpty}
 			grid={grid}
-			title={containerEngineLabel(t`Docker Memory Usage`, containerEngine)}
+			title={containerEngineLabel(t`Docker Memory Usage`, t`Container Memory Usage`, containerEngine)}
 			description={t`Memory usage of containers`}
 			cornerEl={<FilterBar />}
 		>

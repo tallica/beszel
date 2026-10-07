@@ -566,9 +566,21 @@ msgstr "Brak połączenia"
 msgid "Container"
 msgstr "Kontener"
 
+#: src/components/routes/system/charts/cpu-charts.tsx
+msgid "Container CPU Usage"
+msgstr "Użycie CPU przez kontenery"
+
 #: src/lib/alerts.ts
 msgid "Container Health"
 msgstr "Kondycja kontenera"
+
+#: src/components/routes/system/charts/memory-charts.tsx
+msgid "Container Memory Usage"
+msgstr "Użycie pamięci przez kontenery"
+
+#: src/components/routes/system/charts/network-charts.tsx
+msgid "Container Network I/O"
+msgstr "Sieć kontenerów I/O"
 
 #: src/components/routes/system.tsx
 msgid "Containers"

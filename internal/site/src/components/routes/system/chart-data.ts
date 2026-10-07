@@ -93,9 +93,14 @@ export function makeContainerPoint(created: number, stats: ContainerStatsRecord[
 
 export type ContainerEngine = "docker" | "podman" | "incus" | "container"
 
-/** Replace the "Docker" token in a label with the active container engine name. */
-export function containerEngineLabel(str: string, engine: ContainerEngine): string {
-	if (engine === "docker") return str
+/**
+ * Pick the chart title for the active container engine. Engine names aren't
+ * translated, so "Docker" in the translated title is swapped for the engine's
+ * name; a mix of engines uses its own translated title.
+ */
+export function containerEngineLabel(dockerTitle: string, mixedTitle: string, engine: ContainerEngine): string {
+	if (engine === "docker") return dockerTitle
+	if (engine === "container") return mixedTitle
 	const label = engine.charAt(0).toUpperCase() + engine.slice(1)
-	return str.replace("Docker", label).replace("docker", engine)
+	return dockerTitle.replace("Docker", label).replace("docker", engine)
 }
