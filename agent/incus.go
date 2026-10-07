@@ -448,16 +448,6 @@ func newIncusManager() *incusManager {
 		}
 	}
 
-	var excludeContainers []string
-	if excludeStr, set := utils.GetEnv("INCUS_EXCLUDE_CONTAINERS"); set && excludeStr != "" {
-		for part := range strings.SplitSeq(excludeStr, ",") {
-			if trimmed := strings.TrimSpace(part); trimmed != "" {
-				excludeContainers = append(excludeContainers, trimmed)
-			}
-		}
-		slog.Info("INCUS_EXCLUDE_CONTAINERS", "patterns", excludeContainers)
-	}
-
 	slog.Info("Incus", "socket", socketPath)
 
 	return &incusManager{
@@ -465,7 +455,7 @@ func newIncusManager() *incusManager {
 			Timeout:   timeout,
 			Transport: transport,
 		},
-		excludeContainers: excludeContainers,
+		excludeContainers: getExcludeContainers(),
 		numCPU:            runtime.NumCPU(),
 		prevSamples:       make(map[uint16]map[string]incusSample),
 	}

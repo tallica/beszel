@@ -136,6 +136,22 @@ func (dm *dockerManager) shouldExcludeContainer(name string) bool {
 	return false
 }
 
+// getExcludeContainers reads the EXCLUDE_CONTAINERS patterns, shared by Docker and Incus.
+func getExcludeContainers() []string {
+	var excludeContainers []string
+	if excludeStr, set := utils.GetEnv("EXCLUDE_CONTAINERS"); set && excludeStr != "" {
+		parts := strings.SplitSeq(excludeStr, ",")
+		for part := range parts {
+			trimmed := strings.TrimSpace(part)
+			if trimmed != "" {
+				excludeContainers = append(excludeContainers, trimmed)
+			}
+		}
+		slog.Info("EXCLUDE_CONTAINERS", "patterns", excludeContainers)
+	}
+	return excludeContainers
+}
+
 // Returns stats for all running containers with cache-time-aware delta tracking
 func (dm *dockerManager) getDockerStats(cacheTimeMs uint16) ([]*container.Stats, error) {
 	resp, err := dm.client.Get("http://localhost/containers/json")
@@ -691,18 +707,7 @@ func newDockerManager(agent *Agent) *dockerManager {
 
 	dockerImageCheck, _ := utils.GetEnv("DOCKER_IMAGE_CHECK")
 
-	// Read container exclusion patterns from environment variable
-	var excludeContainers []string
-	if excludeStr, set := utils.GetEnv("EXCLUDE_CONTAINERS"); set && excludeStr != "" {
-		parts := strings.SplitSeq(excludeStr, ",")
-		for part := range parts {
-			trimmed := strings.TrimSpace(part)
-			if trimmed != "" {
-				excludeContainers = append(excludeContainers, trimmed)
-			}
-		}
-		slog.Info("EXCLUDE_CONTAINERS", "patterns", excludeContainers)
-	}
+	excludeContainers := getExcludeContainers()
 
 	manager := &dockerManager{
 		agent: agent,

@@ -411,3 +411,11 @@ func TestNewIncusManagerUnixSocket(t *testing.T) {
 	require.NotNil(t, im)
 	assert.Positive(t, im.numCPU)
 }
+
+func TestNewIncusManagerUsesExcludeContainers(t *testing.T) {
+	t.Setenv("INCUS_HOST", "unix:///tmp/does-not-matter.socket")
+	t.Setenv("EXCLUDE_CONTAINERS", "test-*, shop/* ,")
+	im := newIncusManager()
+	require.NotNil(t, im)
+	assert.Equal(t, []string{"test-*", "shop/*"}, im.excludeContainers)
+}
