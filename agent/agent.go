@@ -124,6 +124,12 @@ func NewAgent(dataDir ...string) (agent *Agent, err error) {
 	// initialize system info
 	agent.refreshSystemDetails()
 
+	// Incus CPU % is a share of the host, so use the host's CPU count rather
+	// than runtime.NumCPU, which is limited by the agent's own cpuset.
+	if agent.incusManager != nil && agent.systemDetails.Threads > 0 {
+		agent.incusManager.numCPU = agent.systemDetails.Threads
+	}
+
 	// SMART_INTERVAL env var to update smart data at this interval
 	if smartIntervalEnv, exists := utils.GetEnv("SMART_INTERVAL"); exists {
 		if duration, err := time.ParseDuration(smartIntervalEnv); err == nil && duration > 0 {

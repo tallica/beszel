@@ -33,7 +33,7 @@ type incusManager struct {
 	client            *http.Client
 	mu                sync.Mutex
 	excludeContainers []string
-	numCPU            int // host CPUs; CPU % is a share of the whole host, like Docker's
+	numCPU            int // host CPUs (set from systemDetails.Threads); CPU % is a share of the whole host, like Docker's
 
 	// Previous counter samples per cache time, keyed by instance key (project/name).
 	prevSamples map[uint16]map[string]incusSample
