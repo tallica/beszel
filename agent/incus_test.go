@@ -62,6 +62,8 @@ incus_network_receive_bytes_total{device="eth0",name="web",project="default",typ
 incus_network_transmit_bytes_total{device="lo",name="web",project="default",type="container"} 999
 incus_network_transmit_bytes_total{device="eth0",name="web",project="default",type="container"} 4380
 incus_storage_pool_size_bytes{name="default",type="dir"} 6.2e+10
+incus_boot_time_seconds{name="web",project="default",type="container"} 1.7e+09
+incus_boot_time_seconds{name="paused",project="default",type="container"} 1.7e+09
 incus_uptime_seconds 2448.880084765
 `
 )
@@ -274,7 +276,7 @@ func TestGetIncusStats(t *testing.T) {
 	require.NotNil(t, web)
 	assert.Equal(t, "incus_4a2b18b4f856", web.Id)
 	assert.Equal(t, "incus", web.Type)
-	assert.Equal(t, "Running", web.Status)
+	assert.Regexp(t, `^Up \d+ (years|months)$`, web.Status, "Docker-style uptime")
 	assert.Equal(t, "Alpine 3.22", web.Image)
 	assert.Equal(t, container.DockerHealthNone, web.Health)
 	assert.InDelta(t, 13.65, web.Mem, 0.01, "page cache excluded")
@@ -285,7 +287,8 @@ func TestGetIncusStats(t *testing.T) {
 	assert.Equal(t, "incus_9f0c1d2e3b4a", shopWeb.Id)
 	assert.Equal(t, "debian 12", shopWeb.Image)
 
-	assert.Equal(t, "Frozen", byName["paused"].Status)
+	assert.Regexp(t, `^Up .+ \(Paused\)$`, byName["paused"].Status)
+	assert.Equal(t, "Running", shopWeb.Status, "no boot time falls back to the Incus status")
 	assert.Nil(t, byName["off"])
 }
 
@@ -418,4 +421,53 @@ func TestNewIncusManagerUsesExcludeContainers(t *testing.T) {
 	im := newIncusManager()
 	require.NotNil(t, im)
 	assert.Equal(t, []string{"test-*", "shop/*"}, im.excludeContainers)
+}
+
+func TestIncusHumanDuration(t *testing.T) {
+	// Matches HumanDuration in github.com/docker/go-units, used for Docker's "Up ..." status.
+	tests := []struct {
+		d        time.Duration
+		expected string
+	}{
+		{500 * time.Millisecond, "Less than a second"},
+		{time.Second, "1 second"},
+		{45 * time.Second, "45 seconds"},
+		{90 * time.Second, "About a minute"},
+		{5 * time.Minute, "5 minutes"},
+		{50 * time.Minute, "50 minutes"},
+		{70 * time.Minute, "About an hour"},
+		{3 * time.Hour, "3 hours"},
+		{47 * time.Hour, "47 hours"},
+		{3 * 24 * time.Hour, "3 days"},
+		{20 * 24 * time.Hour, "2 weeks"},
+		{90 * 24 * time.Hour, "3 months"},
+		{800 * 24 * time.Hour, "2 years"},
+	}
+	for _, tt := range tests {
+		assert.Equal(t, tt.expected, humanDuration(tt.d), tt.d.String())
+	}
+}
+
+func TestIncusStatus(t *testing.T) {
+	now := time.Unix(1700000300, 0)
+	m := &incusInstanceMetrics{bootTime: 1700000000}
+	assert.Equal(t, "Up 5 minutes", m.status("Running", now))
+	assert.Equal(t, "Up 5 minutes (Paused)", m.status("Frozen", now))
+	assert.Equal(t, "Running", (&incusInstanceMetrics{}).status("Running", now))
+	assert.Equal(t, "Frozen", (*incusInstanceMetrics)(nil).status("Frozen", now))
+}
+
+func TestGetIncusStatsInstanceMissingFromMetrics(t *testing.T) {
+	// An instance that started between the two requests has no metrics yet.
+	var metrics atomic.Value
+	metrics.Store("")
+	server := makeIncusServer(t, incusListFixture, &metrics)
+	im := newIncusManagerForTest(server, 2)
+
+	stats, err := im.getIncusStats(60000)
+	require.NoError(t, err)
+	require.Len(t, stats, 3)
+	web := statsByName(stats)["web"]
+	assert.Zero(t, web.Mem)
+	assert.Equal(t, "Running", web.Status)
 }

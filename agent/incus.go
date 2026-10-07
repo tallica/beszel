@@ -68,6 +68,7 @@ type incusInstanceMetrics struct {
 	memFree      uint64
 	inactiveFile uint64
 	sent, recv   uint64
+	bootTime     float64 // unix seconds when the instance started
 }
 
 // incusIdleCPUModes are CPU modes that aren't instance activity. Containers
@@ -149,6 +150,11 @@ func (im *incusManager) getIncusStats(cacheTimeMs uint16) ([]*container.Stats, e
 		seen[key] = struct{}{}
 
 		m := metrics[key]
+		if m == nil {
+			// Started between the two requests, or a VM without incus-agent.
+			slog.Debug("No Incus metrics for instance", "name", inst.displayName())
+			m = &incusInstanceMetrics{}
+		}
 		sample := incusSample{cpuSeconds: m.cpuSeconds, sent: m.sent, recv: m.recv, readTime: readTime}
 		cpuPct, sentBps, recvBps := im.calculateRates(inst.displayName(), prev[key], sample)
 		prev[key] = sample
@@ -158,7 +164,7 @@ func (im *incusManager) getIncusStats(cacheTimeMs uint16) ([]*container.Stats, e
 			Id:        inst.containerId(),
 			Image:     incusImageLabel(inst.Config),
 			Type:      "incus",
-			Status:    inst.Status,
+			Status:    m.status(inst.Status, readTime),
 			Health:    container.DockerHealthNone,
 			Cpu:       utils.TwoDecimals(cpuPct),
 			Mem:       utils.BytesToMegabytes(float64(m.usedMemory())),
@@ -216,6 +222,48 @@ func (im *incusManager) calculateRates(name string, prev, cur incusSample) (cpuP
 		}
 	}
 	return cpuPct, sentBps, recvBps
+}
+
+// status returns the instance status in Docker's format ("Up 5 minutes",
+// "Up 5 minutes (Paused)" when frozen), so the UI shows and sorts both engines
+// the same way. Without a boot time it falls back to Incus's status.
+func (m *incusInstanceMetrics) status(incusStatus string, now time.Time) string {
+	if m == nil || m.bootTime <= 0 {
+		return incusStatus
+	}
+	uptime := now.Sub(time.Unix(0, int64(m.bootTime*float64(time.Second))))
+	status := "Up " + humanDuration(uptime)
+	if incusStatus == "Frozen" {
+		status += " (Paused)"
+	}
+	return status
+}
+
+// humanDuration formats a duration like Docker's container status
+// (HumanDuration in github.com/docker/go-units).
+func humanDuration(d time.Duration) string {
+	if seconds := int(d.Seconds()); seconds < 1 {
+		return "Less than a second"
+	} else if seconds == 1 {
+		return "1 second"
+	} else if seconds < 60 {
+		return fmt.Sprintf("%d seconds", seconds)
+	} else if minutes := int(d.Minutes()); minutes == 1 {
+		return "About a minute"
+	} else if minutes < 60 {
+		return fmt.Sprintf("%d minutes", minutes)
+	} else if hours := int(d.Hours() + 0.5); hours == 1 {
+		return "About an hour"
+	} else if hours < 48 {
+		return fmt.Sprintf("%d hours", hours)
+	} else if hours < 24*7*2 {
+		return fmt.Sprintf("%d days", hours/24)
+	} else if hours < 24*30*2 {
+		return fmt.Sprintf("%d weeks", hours/24/7)
+	} else if hours < 24*365*2 {
+		return fmt.Sprintf("%d months", hours/24/30)
+	}
+	return fmt.Sprintf("%d years", int(d.Hours())/24/365)
 }
 
 // usedMemory returns memory in use without reclaimable page cache, matching
@@ -282,7 +330,7 @@ func parseIncusMetrics(r io.Reader) (map[string]*incusInstanceMetrics, error) {
 			continue
 		}
 		switch name {
-		case "incus_cpu_seconds_total", "incus_memory_MemTotal_bytes", "incus_memory_MemFree_bytes",
+		case "incus_boot_time_seconds", "incus_cpu_seconds_total", "incus_memory_MemTotal_bytes", "incus_memory_MemFree_bytes",
 			"incus_memory_Inactive_file_bytes", "incus_network_receive_bytes_total", "incus_network_transmit_bytes_total":
 		default:
 			continue
@@ -297,6 +345,8 @@ func parseIncusMetrics(r io.Reader) (map[string]*incusInstanceMetrics, error) {
 			result[key] = m
 		}
 		switch name {
+		case "incus_boot_time_seconds":
+			m.bootTime = value
 		case "incus_cpu_seconds_total":
 			if !incusIdleCPUModes[labels["mode"]] {
 				m.cpuSeconds += value
