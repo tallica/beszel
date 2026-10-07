@@ -513,6 +513,7 @@ KEY=""
 TOKEN=""
 HUB_URL=""
 AUTO_UPDATE_FLAG="" # empty string means prompt, "true" means auto-enable, "false" means skip
+INCUS_ACCESS=false
 # Track which of the reconfigurable values were explicitly passed as arguments,
 # so a reinstall only overwrites the fields the caller actually asked to change.
 KEY_PROVIDED=false
@@ -535,6 +536,8 @@ case "${1-}" in
   printf "  -u                    : Uninstall Beszel Agent\n"
   printf "  --auto-update [VALUE] : Control automatic daily updates\n"
   printf "                          VALUE can be true (enable) or false (disable). If not specified, will prompt.\n"
+  printf "  --incus               : Give the agent access to the Incus socket to monitor instances\n"
+  printf "                          (adds the beszel user to the socket's group, which is root-equivalent)\n"
   printf "  --mirror [URL]        : Use GitHub proxy to resolve network timeout issues in mainland China\n"
   printf "                          URL: optional custom proxy URL (default: https://gh.beszel.dev)\n"
   printf "  -h, --help            : Display this help message\n"
@@ -605,6 +608,9 @@ while [ $# -gt 0 ]; do
     ;;
   -u)
     UNINSTALL=true
+    ;;
+  --incus)
+    INCUS_ACCESS=true
     ;;
   --mirror* | --china-mirrors*)
     # Check if there's a value after the = sign
@@ -849,6 +855,40 @@ else
   exit 1
 fi
 
+# Print the group that owns the Incus socket, if Incus is installed.
+# Distributions differ: the Zabbly and Debian packages use incus-admin, Alpine uses incus.
+incus_socket_group() {
+  for socket in /var/lib/incus/unix.socket /run/incus/unix.socket; do
+    if [ -S "$socket" ]; then
+      stat -c %G "$socket" 2>/dev/null && return 0
+    fi
+  done
+  return 1
+}
+
+# Add the beszel user to the Incus socket's group when --incus was given.
+# Access to the socket is root-equivalent, so this is opt-in.
+configure_incus_access() {
+  INCUS_GROUP=$(incus_socket_group) || INCUS_GROUP=""
+  if [ "$INCUS_ACCESS" != true ]; then
+    if [ -n "$INCUS_GROUP" ]; then
+      echo "Incus detected. To monitor Incus instances, rerun with --incus (gives the agent root-equivalent access)."
+    fi
+    return 0
+  fi
+  if [ -z "$INCUS_GROUP" ] || [ "$INCUS_GROUP" = "root" ]; then
+    echo "WARNING: --incus given, but no Incus socket with a group was found. Skipping."
+    return 0
+  fi
+  echo "Adding beszel to $INCUS_GROUP group for Incus access"
+  echo "WARNING: members of $INCUS_GROUP have root-equivalent access to this host."
+  if is_alpine; then
+    addgroup beszel "$INCUS_GROUP"
+  else
+    usermod -aG "$INCUS_GROUP" beszel
+  fi
+}
+
 INSTALL_STEP="configuring the service user"
 # Create a dedicated user for the service if it doesn't exist
 AGENT_USER="beszel"
@@ -863,6 +903,7 @@ if is_alpine; then
     echo "Adding beszel to docker group"
     addgroup beszel docker
   fi
+  configure_incus_access
   
 elif is_openwrt; then
   configure_openwrt_account
@@ -901,6 +942,7 @@ else
     echo "Adding beszel to disk group"
     usermod -aG disk beszel
   fi
+  configure_incus_access
 fi
 
 INSTALL_STEP="creating installation directories"
