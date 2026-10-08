@@ -480,18 +480,20 @@ func incusImageLabel(config map[string]string) string {
 	return strings.TrimSpace(config["image.os"] + " " + config["image.release"])
 }
 
-// getIncusSocketPath returns the first existing Incus Unix socket path.
+// getIncusSocketPath returns the first existing Incus Unix socket path, in the
+// same order as the incus client: Fedora's package listens in /run/incus,
+// Debian, Arch, NixOS, Alpine and Zabbly's in /var/lib/incus.
 func getIncusSocketPath() string {
 	candidates := []string{
-		"/var/lib/incus/unix.socket",
 		"/run/incus/unix.socket",
+		"/var/lib/incus/unix.socket",
 	}
 	for _, s := range candidates {
 		if _, err := os.Stat(s); err == nil {
 			return s
 		}
 	}
-	return candidates[0]
+	return candidates[1]
 }
 
 // newIncusManager creates an incusManager connected to the Incus Unix socket.

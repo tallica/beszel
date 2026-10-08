@@ -856,9 +856,10 @@ else
 fi
 
 # Print the group that owns the Incus socket, if Incus is installed.
-# Distributions differ: the Zabbly and Debian packages use incus-admin, Alpine uses incus.
+# Distributions differ: most packages use incus-admin, Alpine uses incus. Fedora's
+# package puts the socket in /run/incus, the others in /var/lib/incus.
 incus_socket_group() {
-  for socket in /var/lib/incus/unix.socket /run/incus/unix.socket; do
+  for socket in /run/incus/unix.socket /var/lib/incus/unix.socket; do
     if [ -S "$socket" ]; then
       stat -c %G "$socket" 2>/dev/null && return 0
     fi
