@@ -229,6 +229,43 @@ func TestIncusUsedMemory(t *testing.T) {
 	assert.Equal(t, uint64(0), incusInstanceMetrics{memTotal: 100, memFree: 50, inactiveFile: 80}.usedMemory(), "cache above usage")
 }
 
+func TestIncusUsedMemoryVM(t *testing.T) {
+	// Real numbers from a 2 GiB VM after an 800 MiB file was read three times and
+	// 200 MiB written to tmpfs. The guest's own "used" plus shmem was 315 MiB; most
+	// of the cache is active, so the containers' formula would give 1186 MiB.
+	m := incusInstanceMetrics{
+		isVM:         true,
+		memTotal:     1921777664,
+		memFree:      659173376,
+		inactiveFile: 19349504,
+		cached:       1123069952,
+		shmem:        234795008,
+	}
+	assert.Equal(t, uint64(374329344), m.usedMemory()) // 357 MiB
+
+	// Without incus-agent there are no cache figures: everything the VM touched counts.
+	noAgent := incusInstanceMetrics{isVM: true, memTotal: 2147483648, memFree: 57143648}
+	assert.Equal(t, uint64(2090340000), noAgent.usedMemory())
+
+	assert.Equal(t, uint64(0), incusInstanceMetrics{isVM: true, memTotal: 100, memFree: 50, cached: 80}.usedMemory(), "cache above usage")
+	assert.Equal(t, uint64(50), incusInstanceMetrics{isVM: true, memTotal: 100, memFree: 50, cached: 10, shmem: 20}.usedMemory(), "shmem above cache")
+}
+
+func TestParseIncusMetricsVMMemory(t *testing.T) {
+	body := `incus_memory_MemTotal_bytes{name="vm",project="default",type="virtual-machine"} 1000
+incus_memory_Cached_bytes{name="vm",project="default",type="virtual-machine"} 300
+incus_memory_Shmem_bytes{name="vm",project="default",type="virtual-machine"} 40
+incus_memory_MemTotal_bytes{name="ct",project="default",type="container"} 1000
+`
+	metrics, err := parseIncusMetrics(strings.NewReader(body))
+	require.NoError(t, err)
+	vm := metrics["default/vm"]
+	assert.True(t, vm.isVM)
+	assert.Equal(t, uint64(300), vm.cached)
+	assert.Equal(t, uint64(40), vm.shmem)
+	assert.False(t, metrics["default/ct"].isVM)
+}
+
 func TestIncusCalculateRates(t *testing.T) {
 	im := &incusManager{numCPU: 4}
 	t0 := time.Unix(1000, 0)

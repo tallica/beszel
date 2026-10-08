@@ -67,6 +67,9 @@ type incusInstanceMetrics struct {
 	memTotal     uint64
 	memFree      uint64
 	inactiveFile uint64
+	cached       uint64 // page cache including shmem; only used for VMs
+	shmem        uint64
+	isVM         bool
 	sent, recv   uint64
 	bootTime     float64 // unix seconds when the instance started
 }
@@ -162,7 +165,7 @@ func (im *incusManager) getIncusStats(cacheTimeMs uint16) ([]*container.Stats, e
 		usedMem := m.usedMemory()
 		if usedMem == 0 && m.memTotal > 0 {
 			slog.Debug("Unexpected Incus memory values", "name", inst.displayName(),
-				"total", m.memTotal, "free", m.memFree, "inactiveFile", m.inactiveFile)
+				"total", m.memTotal, "free", m.memFree, "inactiveFile", m.inactiveFile, "cached", m.cached, "shmem", m.shmem)
 		}
 
 		stats = append(stats, &container.Stats{
@@ -272,18 +275,30 @@ func humanDuration(d time.Duration) string {
 	return fmt.Sprintf("%d years", int(d.Hours())/24/365)
 }
 
-// usedMemory returns memory in use without reclaimable page cache, matching
-// Docker's figure (cgroup usage minus inactive_file). MemTotal - MemFree is
-// the cgroup's memory.current for containers.
+// usedMemory returns memory in use without reclaimable page cache.
+//
+// For containers it matches Docker's figure (cgroup usage minus inactive_file);
+// MemTotal - MemFree is the cgroup's memory.current. For VMs the values come
+// from the guest's /proc/meminfo, where active page cache would also count, so
+// all page cache except shmem (tmpfs, which is in use) is left out, close to
+// the guest's own "used". Without incus-agent the values come from QEMU, with
+// no cache figures, so a VM shows all memory it has touched on the host.
 func (m incusInstanceMetrics) usedMemory() uint64 {
 	if m.memTotal <= m.memFree {
 		return 0
 	}
 	used := m.memTotal - m.memFree
-	if used <= m.inactiveFile {
+	reclaimable := m.inactiveFile
+	if m.isVM {
+		reclaimable = 0
+		if m.cached > m.shmem {
+			reclaimable = m.cached - m.shmem
+		}
+	}
+	if used <= reclaimable {
 		return 0
 	}
-	used -= m.inactiveFile
+	used -= reclaimable
 	if used > maxMemoryUsage {
 		return 0
 	}
@@ -337,7 +352,8 @@ func parseIncusMetrics(r io.Reader) (map[string]*incusInstanceMetrics, error) {
 		}
 		switch name {
 		case "incus_boot_time_seconds", "incus_cpu_seconds_total", "incus_memory_MemTotal_bytes", "incus_memory_MemFree_bytes",
-			"incus_memory_Inactive_file_bytes", "incus_network_receive_bytes_total", "incus_network_transmit_bytes_total":
+			"incus_memory_Inactive_file_bytes", "incus_memory_Cached_bytes", "incus_memory_Shmem_bytes",
+			"incus_network_receive_bytes_total", "incus_network_transmit_bytes_total":
 		default:
 			continue
 		}
@@ -349,6 +365,9 @@ func parseIncusMetrics(r io.Reader) (map[string]*incusInstanceMetrics, error) {
 		if m == nil {
 			m = &incusInstanceMetrics{}
 			result[key] = m
+		}
+		if labels["type"] == "virtual-machine" {
+			m.isVM = true
 		}
 		switch name {
 		case "incus_boot_time_seconds":
@@ -363,6 +382,10 @@ func parseIncusMetrics(r io.Reader) (map[string]*incusInstanceMetrics, error) {
 			m.memFree = uint64(value)
 		case "incus_memory_Inactive_file_bytes":
 			m.inactiveFile = uint64(value)
+		case "incus_memory_Cached_bytes":
+			m.cached = uint64(value)
+		case "incus_memory_Shmem_bytes":
+			m.shmem = uint64(value)
 		case "incus_network_receive_bytes_total":
 			if labels["device"] != "lo" {
 				m.recv += uint64(value)
