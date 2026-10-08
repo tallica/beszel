@@ -91,9 +91,16 @@ export function makeContainerPoint(created: number, stats: ContainerStatsRecord[
 	return point
 }
 
-export function dockerOrPodman(str: string, isPodman: boolean): string {
-	if (isPodman) {
-		return str.replace("docker", "podman").replace("Docker", "Podman")
-	}
-	return str
+export type ContainerEngine = "docker" | "podman" | "incus" | "container"
+
+/**
+ * Pick the chart title for the active container engine. Engine names aren't
+ * translated, so "Docker" in the translated title is swapped for the engine's
+ * name; a mix of engines uses its own translated title.
+ */
+export function containerEngineLabel(dockerTitle: string, mixedTitle: string, engine: ContainerEngine): string {
+	if (engine === "docker") return dockerTitle
+	if (engine === "container") return mixedTitle
+	const label = engine.charAt(0).toUpperCase() + engine.slice(1)
+	return dockerTitle.replace("Docker", label).replace("docker", engine)
 }

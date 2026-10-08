@@ -19,7 +19,7 @@ import { Input } from "@/components/ui/input"
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { pb } from "@/lib/api"
 import type { ContainerRecord } from "@/types"
-import { containerChartCols } from "@/components/containers-table/containers-table-columns"
+import { containerChartCols, isIncusContainer } from "@/components/containers-table/containers-table-columns"
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { type ContainerHealth, ContainerHealthLabels } from "@/lib/enums"
 import { cn, useBrowserStorage } from "@/lib/utils"
@@ -332,6 +332,8 @@ function ContainerSheet({
 	const logsContainerRef = useRef<HTMLDivElement>(null)
 
 	const container = activeContainer.current
+	// The hub can't fetch logs or details for Incus instances yet
+	const hasDetails = container ? !isIncusContainer(container) : false
 
 	function scrollLogsToBottom() {
 		if (logsContainerRef.current) {
@@ -340,7 +342,7 @@ function ContainerSheet({
 	}
 
 	const refreshLogs = async () => {
-		if (!container) return
+		if (!container || !hasDetails) return
 		setIsRefreshingLogs(true)
 		const startTime = Date.now()
 
@@ -363,14 +365,14 @@ function ContainerSheet({
 	useEffect(() => {
 		setLogsDisplay("")
 		setInfoDisplay("")
-		if (!container) return
+		if (!container || !hasDetails) return
 		;(async () => {
 			const [logsHtml, infoHtml] = await Promise.all([getLogsHtml(container), getInfoHtml(container)])
 			setLogsDisplay(logsHtml)
 			setInfoDisplay(infoHtml)
 			setTimeout(scrollLogsToBottom, 20)
 		})()
-	}, [container])
+	}, [container, hasDetails])
 
 	if (!container) return null
 
@@ -414,40 +416,46 @@ function ContainerSheet({
 							{ContainerHealthLabels[container.health as ContainerHealth]} */}
 						</SheetDescription>
 					</SheetHeader>
-					<div className="px-3 pb-3 -mt-4 flex flex-col gap-3 h-full items-start">
-						<div className="flex items-center w-full">
-							<h3>{t`Logs`}</h3>
-							<LogsTimestampToggle className="ms-auto" />
-							<LogsIconButton label={t`Refresh`} onClick={refreshLogs} disabled={isRefreshingLogs}>
-								<RefreshCwIcon
-									className={`size-4 transition-transform duration-300 ${isRefreshingLogs ? "animate-spin" : ""}`}
-								/>
-							</LogsIconButton>
-							<LogsIconButton label={t`Fullscreen`} onClick={() => setLogsFullscreenOpen(true)}>
-								<MaximizeIcon className="size-4" />
-							</LogsIconButton>
-						</div>
-						<LogsDisplay logsDisplay={logsDisplay} containerRef={logsContainerRef} />
-						<div className="flex items-center w-full">
-							<h3>{t`Detail`}</h3>
-							<Button
-								variant="ghost"
-								size="sm"
-								onClick={() => setInfoFullscreenOpen(true)}
-								className="h-8 w-8 p-0 ms-auto"
+					{!hasDetails ? (
+						<p className="px-3 pb-3 text-sm text-muted-foreground">
+							<Trans>Logs and details aren't available for Incus instances yet.</Trans>
+						</p>
+					) : (
+						<div className="px-3 pb-3 -mt-4 flex flex-col gap-3 h-full items-start">
+							<div className="flex items-center w-full">
+								<h3>{t`Logs`}</h3>
+								<LogsTimestampToggle className="ms-auto" />
+								<LogsIconButton label={t`Refresh`} onClick={refreshLogs} disabled={isRefreshingLogs}>
+									<RefreshCwIcon
+										className={`size-4 transition-transform duration-300 ${isRefreshingLogs ? "animate-spin" : ""}`}
+									/>
+								</LogsIconButton>
+								<LogsIconButton label={t`Fullscreen`} onClick={() => setLogsFullscreenOpen(true)}>
+									<MaximizeIcon className="size-4" />
+								</LogsIconButton>
+							</div>
+							<LogsDisplay logsDisplay={logsDisplay} containerRef={logsContainerRef} />
+							<div className="flex items-center w-full">
+								<h3>{t`Detail`}</h3>
+								<Button
+									variant="ghost"
+									size="sm"
+									onClick={() => setInfoFullscreenOpen(true)}
+									className="h-8 w-8 p-0 ms-auto"
+								>
+									<MaximizeIcon className="size-4" />
+								</Button>
+							</div>
+							<div
+								className={cn(
+									"grow h-[calc(50dvh-4rem)] w-full overflow-auto p-3 rounded-md bg-gh-dark text-white text-sm",
+									!infoDisplay && "animate-pulse"
+								)}
 							>
-								<MaximizeIcon className="size-4" />
-							</Button>
+								<div dangerouslySetInnerHTML={{ __html: infoDisplay }} />
+							</div>
 						</div>
-						<div
-							className={cn(
-								"grow h-[calc(50dvh-4rem)] w-full overflow-auto p-3 rounded-md bg-gh-dark text-white text-sm",
-								!infoDisplay && "animate-pulse"
-							)}
-						>
-							<div dangerouslySetInnerHTML={{ __html: infoDisplay }} />
-						</div>
-					</div>
+					)}
 				</SheetContent>
 			</Sheet>
 		</>

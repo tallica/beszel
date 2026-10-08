@@ -561,9 +561,21 @@ msgstr "Connection is down"
 msgid "Container"
 msgstr "Container"
 
+#: src/components/routes/system/charts/cpu-charts.tsx
+msgid "Container CPU Usage"
+msgstr "Container CPU Usage"
+
 #: src/lib/alerts.ts
 msgid "Container Health"
 msgstr "Container Health"
+
+#: src/components/routes/system/charts/memory-charts.tsx
+msgid "Container Memory Usage"
+msgstr "Container Memory Usage"
+
+#: src/components/routes/system/charts/network-charts.tsx
+msgid "Container Network I/O"
+msgstr "Container Network I/O"
 
 #: src/components/routes/system.tsx
 msgid "Containers"
@@ -1279,6 +1291,10 @@ msgstr "Login attempt failed"
 #: src/components/systemd-table/systemd-table.tsx
 msgid "Logs"
 msgstr "Logs"
+
+#: src/components/containers-table/containers-table.tsx
+msgid "Logs and details aren't available for Incus instances yet."
+msgstr "Logs and details aren't available for Incus instances yet."
 
 #: src/components/routes/settings/notifications.tsx
 msgid "Looking instead for where to create alerts? Click the bell <0/> icons in the systems table."

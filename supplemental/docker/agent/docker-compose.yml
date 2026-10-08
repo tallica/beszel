@@ -12,6 +12,8 @@ services:
     volumes:
       - ./beszel_agent_data:/var/lib/beszel-agent
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      # monitor Incus instances (gives the agent root-equivalent access to the host)
+      # - /var/lib/incus/unix.socket:/var/lib/incus/unix.socket
       # monitor other disks / partitions by mounting a folder in /extra-filesystems
       # - /mnt/disk1/.beszel:/extra-filesystems/disk1:ro
     environment:

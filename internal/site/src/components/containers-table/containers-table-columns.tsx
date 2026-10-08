@@ -32,6 +32,9 @@ const unitSeconds = [
 // Convert docker status string to number of seconds ("Up X minutes", "Up X hours", etc.)
 function getStatusValue(status: string): number {
 	const [_, num, unit] = status.split(" ")
+	if (!unit) {
+		return 0
+	}
 	// Docker uses "a" or "an" instead of "1" for singular units (e.g., "Up a minute", "Up an hour")
 	const numValue = num === "a" || num === "an" ? 1 : Number(num)
 	for (const [unitName, value] of unitSeconds) {
@@ -42,14 +45,27 @@ function getStatusValue(status: string): number {
 	return 0
 }
 
+// Incus instances are reported with an "incus_" ID prefix; the containers table has no engine column yet.
+export const isIncusContainer = (record: ContainerRecord) => record.id.startsWith("incus_")
+
 export const containerChartCols: ColumnDef<ContainerRecord>[] = [
 	{
 		id: "name",
 		sortingFn: (a, b) => a.original.name.localeCompare(b.original.name),
 		accessorFn: (record) => record.name,
 		header: ({ column }) => <HeaderButton column={column} name={t`Name`} Icon={ContainerIcon} />,
-		cell: ({ getValue }) => {
-			return <span className="ms-1.5 xl:w-48 block truncate">{getValue() as string}</span>
+		cell: ({ row }) => {
+			const isIncus = isIncusContainer(row.original)
+			return (
+				<div className="flex items-center gap-1.5 ms-1.5">
+					<span className="xl:w-48 block truncate">{row.original.name}</span>
+					{isIncus && (
+						<Badge variant="outline" className="shrink-0 py-0 px-1 text-xs font-normal">
+							Incus
+						</Badge>
+					)}
+				</div>
+			)
 		},
 	},
 	{
