@@ -1292,6 +1292,10 @@ msgstr "Login attempt failed"
 msgid "Logs"
 msgstr "Logs"
 
+#: src/components/containers-table/containers-table.tsx
+msgid "Logs and details aren't available for Incus instances yet."
+msgstr "Logs and details aren't available for Incus instances yet."
+
 #: src/components/routes/settings/notifications.tsx
 msgid "Looking instead for where to create alerts? Click the bell <0/> icons in the systems table."
 msgstr "Looking instead for where to create alerts? Click the bell <0/> icons in the systems table."

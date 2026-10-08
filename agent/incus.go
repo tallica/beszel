@@ -159,6 +159,12 @@ func (im *incusManager) getIncusStats(cacheTimeMs uint16) ([]*container.Stats, e
 		cpuPct, sentBps, recvBps := im.calculateRates(inst.displayName(), prev[key], sample)
 		prev[key] = sample
 
+		usedMem := m.usedMemory()
+		if usedMem == 0 && m.memTotal > 0 {
+			slog.Debug("Unexpected Incus memory values", "name", inst.displayName(),
+				"total", m.memTotal, "free", m.memFree, "inactiveFile", m.inactiveFile)
+		}
+
 		stats = append(stats, &container.Stats{
 			Name:      inst.displayName(),
 			Id:        inst.containerId(),
@@ -167,7 +173,7 @@ func (im *incusManager) getIncusStats(cacheTimeMs uint16) ([]*container.Stats, e
 			Status:    m.status(inst.Status, readTime),
 			Health:    container.DockerHealthNone,
 			Cpu:       utils.TwoDecimals(cpuPct),
-			Mem:       utils.BytesToMegabytes(float64(m.usedMemory())),
+			Mem:       utils.BytesToMegabytes(float64(usedMem)),
 			Bandwidth: [2]uint64{sentBps, recvBps},
 			// TODO(0.19+): stop populating NetworkSent/NetworkRecv (deprecated in 0.18.3)
 			NetworkSent: utils.BytesToMegabytes(float64(sentBps)),

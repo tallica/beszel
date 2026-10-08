@@ -1297,6 +1297,10 @@ msgstr "Próba logowania nie powiodła się"
 msgid "Logs"
 msgstr "Logi"
 
+#: src/components/containers-table/containers-table.tsx
+msgid "Logs and details aren't available for Incus instances yet."
+msgstr "Logi i szczegóły nie są jeszcze dostępne dla instancji Incus."
+
 #: src/components/routes/settings/notifications.tsx
 msgid "Looking instead for where to create alerts? Click the bell <0/> icons in the systems table."
 msgstr "Szukasz, gdzie utworzyć powiadomienia? Kliknij ikonę dzwonka <0/> w tabeli systemów."
