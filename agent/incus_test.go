@@ -4,6 +4,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -487,11 +488,28 @@ func TestIncusHumanDuration(t *testing.T) {
 
 func TestIncusStatus(t *testing.T) {
 	now := time.Unix(1700000300, 0)
+	running := &incusInstance{Status: "Running"}
+	frozen := &incusInstance{Status: "Frozen"}
 	m := &incusInstanceMetrics{bootTime: 1700000000}
-	assert.Equal(t, "Up 5 minutes", m.status("Running", now))
-	assert.Equal(t, "Up 5 minutes (Paused)", m.status("Frozen", now))
-	assert.Equal(t, "Running", (&incusInstanceMetrics{}).status("Running", now))
-	assert.Equal(t, "Frozen", (*incusInstanceMetrics)(nil).status("Frozen", now))
+	assert.Equal(t, "Up 5 minutes", m.status(running, now))
+	assert.Equal(t, "Up 5 minutes (Paused)", m.status(frozen, now))
+	assert.Equal(t, "Running", (&incusInstanceMetrics{}).status(running, now))
+	assert.Equal(t, "Frozen", (*incusInstanceMetrics)(nil).status(frozen, now))
+
+	// Incus 6.0 has no incus_boot_time_seconds; last_used_at is the start time.
+	lts := &incusInstance{Status: "Running", LastUsedAt: time.Unix(1700000000-7200, 0)}
+	assert.Equal(t, "Up 2 hours", (&incusInstanceMetrics{}).status(lts, now))
+	assert.Equal(t, "Up 5 minutes", m.status(lts, now), "boot time wins")
+}
+
+func TestIncusInstanceLastUsedAt(t *testing.T) {
+	// The format Incus sends, and the zero time it uses for never-started instances.
+	var insts []incusInstance
+	require.NoError(t, json.Unmarshal([]byte(`[
+		{"name":"web1","status":"Running","last_used_at":"2026-10-08T17:51:44.896896852Z"},
+		{"name":"new","status":"Stopped","last_used_at":"0001-01-01T00:00:00Z"}]`), &insts))
+	assert.Equal(t, int64(1791481904), insts[0].LastUsedAt.Unix())
+	assert.Equal(t, "Stopped", (&incusInstanceMetrics{}).status(&insts[1], time.Now()))
 }
 
 func TestGetIncusStatsInstanceMissingFromMetrics(t *testing.T) {

@@ -59,6 +59,9 @@ type incusInstance struct {
 	Status  string            `json:"status"`
 	Type    string            `json:"type"`
 	Config  map[string]string `json:"config"`
+	// LastUsedAt is set when the instance starts; freezing, exec and
+	// snapshots don't change it.
+	LastUsedAt time.Time `json:"last_used_at"`
 }
 
 // incusInstanceMetrics holds the values read from /1.0/metrics for one instance.
@@ -173,7 +176,7 @@ func (im *incusManager) getIncusStats(cacheTimeMs uint16) ([]*container.Stats, e
 			Id:        inst.containerId(),
 			Image:     incusImageLabel(inst.Config),
 			Type:      "incus",
-			Status:    m.status(inst.Status, readTime),
+			Status:    m.status(inst, readTime),
 			Health:    container.DockerHealthNone,
 			Cpu:       utils.TwoDecimals(cpuPct),
 			Mem:       utils.BytesToMegabytes(float64(usedMem)),
@@ -235,14 +238,19 @@ func (im *incusManager) calculateRates(name string, prev, cur incusSample) (cpuP
 
 // status returns the instance status in Docker's format ("Up 5 minutes",
 // "Up 5 minutes (Paused)" when frozen), so the UI shows and sorts both engines
-// the same way. Without a boot time it falls back to Incus's status.
-func (m *incusInstanceMetrics) status(incusStatus string, now time.Time) string {
-	if m == nil || m.bootTime <= 0 {
-		return incusStatus
+// the same way. The start time is incus_boot_time_seconds, or the instance's
+// last_used_at on Incus 6.0, which doesn't report it. Without either it falls
+// back to Incus's status.
+func (m *incusInstanceMetrics) status(inst *incusInstance, now time.Time) string {
+	started := inst.LastUsedAt
+	if m != nil && m.bootTime > 0 {
+		started = time.Unix(0, int64(m.bootTime*float64(time.Second)))
 	}
-	uptime := now.Sub(time.Unix(0, int64(m.bootTime*float64(time.Second))))
-	status := "Up " + humanDuration(uptime)
-	if incusStatus == "Frozen" {
+	if started.Unix() <= 0 {
+		return inst.Status
+	}
+	status := "Up " + humanDuration(now.Sub(started))
+	if inst.Status == "Frozen" {
 		status += " (Paused)"
 	}
 	return status
